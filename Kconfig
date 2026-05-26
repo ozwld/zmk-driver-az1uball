@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: MIT
+
+config ZMK_INPUT_AZ1BALL
+    bool "AZ1BALL trackball input driver"
+    default n
+    select INPUT
+    select I2C
+    help
+      Enable driver for AZ1BALL trackball (I2C hall sensor unit).
+
+if ZMK_INPUT_AZ1BALL
+
+config ZMK_INPUT_AZ1BALL_INIT_PRIORITY
+    int "AZ1BALL driver initialization priority"
+    default 80
+    help
+      Initialization priority for AZ1BALL driver.
+
+config ZMK_INPUT_AZ1BALL_LOG_LEVEL
+    int "AZ1BALL driver log level"
+    default 3
+    range 0 4
+    help
+      Log level for AZ1BALL driver.
+      0 = OFF, 1 = ERROR, 2 = WARNING, 3 = INFO, 4 = DEBUG
+
+endif # ZMK_INPUT_AZ1BALL

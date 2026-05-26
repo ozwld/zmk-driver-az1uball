@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: MIT
+
+description: |
+  AZ1BALL trackball input driver
+
+  Reads 5-byte motion data over I2C from the AZ1BALL hall sensor unit and
+  reports relative X/Y movement plus a button state.
+
+  The device returns bytes in this order:
+    [0]=left, [1]=right, [2]=up, [3]=down, [4]=button(bit7)
+
+  Example usage:
+    az1ball: az1ball@0a {
+      compatible = "az1ball,az1ball";
+      reg = <0x0A>;
+      polling-interval-ms = <5>;
+      count-type = <1>;
+      invert-y;
+      scale-x = <1>;
+      scale-y = <1>;
+    };
+
+compatible: "az1ball,az1ball"
+
+include: [base.yaml, i2c-device.yaml]
+
+properties:
+  polling-interval-ms:
+    type: int
+    default: 5
+    description: Sensor polling interval in milliseconds.
+
+  count-type:
+    type: int
+    default: 0
+    enum: [0, 1]
+    description: |
+      Count accumulation mode. 0 = normal, 1 = AZ mode.
+      This value is sent once during initialization.
+
+  invert-x:
+    type: boolean
+    description: Invert X axis.
+
+  invert-y:
+    type: boolean
+    description: Invert Y axis.
+
+  swap-xy:
+    type: boolean
+    description: Swap X and Y axes.
+
+  scale-x:
+    type: int
+    default: 1
+    description: Multiplier applied to X delta.
+
+  scale-y:
+    type: int
+    default: 1
+    description: Multiplier applied to Y delta.
