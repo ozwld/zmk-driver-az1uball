@@ -115,12 +115,21 @@ static int az1ball_init(const struct device *dev) {
         return -ENODEV;
     }
 
-    /* Diagnostic: scan the I2C bus so the log shows exactly what ACKs. */
+    /* aztouch: select AZ1UBALL-compatible response (send_type 0) by writing
+     * command 0x20. Then the trackpad returns the same 5-byte
+     * [L,R,U,D,flags] layout this driver expects (0x21=2-byte, 0x22=XY,
+     * 0x23=raw). This write also doubles as an "is the chip alive?" probe. */
+    {
+        uint8_t cmd = 0x20;
+        int wret = i2c_write_dt(&cfg->i2c, &cmd, 1);
+        LOG_INF("aztouch set-mode 0x20 -> %d (%s)", wret,
+                wret == 0 ? "ACK / chip alive" : "NO-ACK");
+    }
+
+    /* Diagnostic: address-only probe (0-byte write) — does not trigger the
+     * slow requestEvent handler, so it cleanly tests address ACK. */
     for (uint16_t a = 0x08; a < 0x78; a++) {
-        struct i2c_dt_spec probe = cfg->i2c;
-        probe.addr = a;
-        uint8_t b;
-        if (i2c_read_dt(&probe, &b, 1) == 0) {
+        if (i2c_write(cfg->i2c.bus, NULL, 0, a) == 0) {
             LOG_INF("I2C scan: ACK at 0x%02x", a);
         }
     }
