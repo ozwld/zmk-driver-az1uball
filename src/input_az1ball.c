@@ -38,10 +38,12 @@
 LOG_MODULE_REGISTER(input_az1ball, CONFIG_ZMK_INPUT_AZ1BALL_LOG_LEVEL);
 
 static uint8_t az1ball_speed;
+static uint8_t az1ball_accel = 4;
 
-static void az1ball_save_speed(void) {
+static void az1ball_save_settings(void) {
 #ifdef CONFIG_SETTINGS
     settings_save_one("az1ball/speed", &az1ball_speed, sizeof(az1ball_speed));
+    settings_save_one("az1ball/accel", &az1ball_accel, sizeof(az1ball_accel));
 #endif
 }
 
@@ -73,6 +75,14 @@ static int az1ball_settings_set(const char *name, size_t len,
         }
         read_cb(cb_arg, &az1ball_speed, sizeof(az1ball_speed));
         LOG_INF("loaded speed=%u from settings", az1ball_speed);
+        return 0;
+    }
+    if (!strcmp(name, "accel")) {
+        if (len != sizeof(az1ball_accel)) {
+            return -EINVAL;
+        }
+        read_cb(cb_arg, &az1ball_accel, sizeof(az1ball_accel));
+        LOG_INF("loaded accel=%u from settings", az1ball_accel);
         return 0;
     }
     return -ENOENT;
@@ -116,7 +126,7 @@ static ssize_t speed_write_cb(struct bt_conn *conn,
     }
     az1ball_speed = val;
     LOG_INF("speed set to %u via BLE", val);
-    az1ball_save_speed();
+    az1ball_save_settings();
     return len;
 }
 
@@ -159,11 +169,24 @@ static void serial_process_cmd(void) {
     if (cmd[0] == '?') {
         snprintf(resp, sizeof(resp), "SPD:%u\n", az1ball_speed);
         serial_send(resp);
+        snprintf(resp, sizeof(resp), "ACC:%u\n", az1ball_accel);
+        serial_send(resp);
+    } else if (cmd[0] == 'a' || cmd[0] == 'A') {
+        int val = atoi(cmd + 1);
+        if (val >= 0 && val <= 10) {
+            az1ball_accel = (uint8_t)val;
+            az1ball_save_settings();
+            snprintf(resp, sizeof(resp), "OK:A%u\n", az1ball_accel);
+            serial_send(resp);
+            LOG_INF("accel set to %u via serial", az1ball_accel);
+        } else {
+            serial_send("ERR\n");
+        }
     } else {
         int val = atoi(cmd);
         if (val >= 1 && val <= 10) {
             az1ball_speed = (uint8_t)val;
-            az1ball_save_speed();
+            az1ball_save_settings();
             snprintf(resp, sizeof(resp), "OK:%u\n", az1ball_speed);
             serial_send(resp);
             LOG_INF("speed set to %u via serial", az1ball_speed);
@@ -245,8 +268,13 @@ static int az1ball_read_report(const struct device *dev) {
     uint8_t s = az1ball_speed > 0 ? az1ball_speed : cfg->scale_x;
     int16_t ax = abs(dx);
     int16_t ay = abs(dy);
-    dx = dx * s + dx * ax / 4;
-    dy = dy * s + dy * ay / 4;
+    if (az1ball_accel > 0) {
+        dx = dx * s + dx * ax / az1ball_accel;
+        dy = dy * s + dy * ay / az1ball_accel;
+    } else {
+        dx = dx * s;
+        dy = dy * s;
+    }
 
     if (dx != 0 || dy != 0) {
         input_report_rel(dev, INPUT_REL_X, dx, false, K_FOREVER);
