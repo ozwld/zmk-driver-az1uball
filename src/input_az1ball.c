@@ -25,7 +25,11 @@
 #include <zephyr/settings/settings.h>
 #endif
 
-#if DT_NODE_EXISTS(DT_NODELABEL(cdc_acm_uart0))
+#if DT_NODE_EXISTS(DT_NODELABEL(board_cdc_acm_uart))
+#define AZ1BALL_USB_SERIAL 1
+#include <zephyr/drivers/uart.h>
+#include <stdlib.h>
+#elif DT_NODE_EXISTS(DT_NODELABEL(cdc_acm_uart0))
 #define AZ1BALL_USB_SERIAL 1
 #include <zephyr/drivers/uart.h>
 #include <stdlib.h>
@@ -130,8 +134,13 @@ BT_GATT_SERVICE_DEFINE(az1ball_config_svc,
 
 #ifdef AZ1BALL_USB_SERIAL
 
+#if DT_NODE_EXISTS(DT_NODELABEL(board_cdc_acm_uart))
+static const struct device *const serial_dev =
+    DEVICE_DT_GET(DT_NODELABEL(board_cdc_acm_uart));
+#else
 static const struct device *const serial_dev =
     DEVICE_DT_GET(DT_NODELABEL(cdc_acm_uart0));
+#endif
 static struct k_work_delayable serial_work;
 static uint8_t serial_buf[16];
 static uint8_t serial_buf_pos;
