@@ -25,9 +25,21 @@
 #include <zephyr/settings/settings.h>
 #endif
 
+#if DT_NODE_EXISTS(DT_NODELABEL(cdc_acm_uart0))
+#define AZ1BALL_USB_SERIAL 1
+#include <zephyr/drivers/uart.h>
+#include <stdlib.h>
+#endif
+
 LOG_MODULE_REGISTER(input_az1ball, CONFIG_ZMK_INPUT_AZ1BALL_LOG_LEVEL);
 
 static uint8_t az1ball_speed;
+
+static void az1ball_save_speed(void) {
+#ifdef CONFIG_SETTINGS
+    settings_save_one("az1ball/speed", &az1ball_speed, sizeof(az1ball_speed));
+#endif
+}
 
 struct az1ball_config {
     struct i2c_dt_spec i2c;
@@ -100,9 +112,7 @@ static ssize_t speed_write_cb(struct bt_conn *conn,
     }
     az1ball_speed = val;
     LOG_INF("speed set to %u via BLE", val);
-#ifdef CONFIG_SETTINGS
-    settings_save_one("az1ball/speed", &az1ball_speed, sizeof(az1ball_speed));
-#endif
+    az1ball_save_speed();
     return len;
 }
 
@@ -115,6 +125,76 @@ BT_GATT_SERVICE_DEFINE(az1ball_config_svc,
 );
 
 #endif /* CONFIG_BT */
+
+/* --- USB Serial configuration interface --- */
+
+#ifdef AZ1BALL_USB_SERIAL
+
+static const struct device *const serial_dev =
+    DEVICE_DT_GET(DT_NODELABEL(cdc_acm_uart0));
+static struct k_work_delayable serial_work;
+static uint8_t serial_buf[16];
+static uint8_t serial_buf_pos;
+
+static void serial_send(const char *s) {
+    for (; *s; s++) {
+        uart_poll_out(serial_dev, *s);
+    }
+}
+
+static void serial_process_cmd(void) {
+    serial_buf[serial_buf_pos] = '\0';
+    char *cmd = (char *)serial_buf;
+    char resp[16];
+
+    if (cmd[0] == '?') {
+        snprintf(resp, sizeof(resp), "SPD:%u\n", az1ball_speed);
+        serial_send(resp);
+    } else {
+        int val = atoi(cmd);
+        if (val >= 1 && val <= 10) {
+            az1ball_speed = (uint8_t)val;
+            az1ball_save_speed();
+            snprintf(resp, sizeof(resp), "OK:%u\n", az1ball_speed);
+            serial_send(resp);
+            LOG_INF("speed set to %u via serial", az1ball_speed);
+        } else {
+            serial_send("ERR\n");
+        }
+    }
+    serial_buf_pos = 0;
+}
+
+static void serial_work_handler(struct k_work *work) {
+    if (!device_is_ready(serial_dev)) {
+        k_work_reschedule(&serial_work, K_MSEC(500));
+        return;
+    }
+
+    uint8_t c;
+    while (uart_poll_in(serial_dev, &c) == 0) {
+        if (c == '\n' || c == '\r') {
+            if (serial_buf_pos > 0) {
+                serial_process_cmd();
+            }
+        } else if (serial_buf_pos < sizeof(serial_buf) - 1) {
+            serial_buf[serial_buf_pos++] = c;
+        }
+    }
+    k_work_reschedule(&serial_work, K_MSEC(100));
+}
+
+static void az1ball_serial_init(void) {
+    if (!device_is_ready(serial_dev)) {
+        LOG_WRN("CDC ACM UART not ready");
+        return;
+    }
+    k_work_init_delayable(&serial_work, serial_work_handler);
+    k_work_schedule(&serial_work, K_MSEC(1000));
+    LOG_INF("USB serial config ready");
+}
+
+#endif /* AZ1BALL_USB_SERIAL */
 
 /* --- Sensor polling --- */
 
@@ -209,6 +289,10 @@ static int az1ball_init(const struct device *dev) {
 
     k_work_init_delayable(&data->work, az1ball_work_handler);
     k_work_schedule(&data->work, K_MSEC(cfg->polling_interval_ms));
+
+#ifdef AZ1BALL_USB_SERIAL
+    az1ball_serial_init();
+#endif
 
     return 0;
 }
