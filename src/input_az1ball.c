@@ -243,10 +243,10 @@ static int az1ball_read_report(const struct device *dev) {
     }
 
     uint8_t s = az1ball_speed > 0 ? az1ball_speed : cfg->scale_x;
-    if (s > 1) {
-        dx *= s;
-        dy *= s;
-    }
+    int16_t ax = abs(dx);
+    int16_t ay = abs(dy);
+    dx = dx * s + dx * ax / 4;
+    dy = dy * s + dy * ay / 4;
 
     if (dx != 0 || dy != 0) {
         input_report_rel(dev, INPUT_REL_X, dx, false, K_FOREVER);
